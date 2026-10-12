@@ -1,0 +1,53 @@
+name: Rappel du soir et réveil de la base
+
+# Toutes les heures : relance la base Supabase (elle n'est jamais mise en pause)
+# et envoie le rappel aux joueurs dont l'heure choisie est arrivée.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rappel
+  cancel-in-progress: false
+
+jobs:
+  rappel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Installer
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Relancer la base et envoyer les rappels
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+        run: node scripts/rappel.mjs
+
+      # GitHub désactive les tâches planifiées d'un dépôt public sans activité
+      # depuis 60 jours : un petit commit tous les 45 jours l'en empêche.
+      - name: Garder la tâche planifiée active
+        run: |
+          last=$(git log -1 --format=%ct)
+          days=$(( ( $(date +%s) - last ) / 86400 ))
+          if [ "$days" -ge 45 ]; then
+            date -u +%Y-%m-%dT%H:%M:%SZ > .github/heartbeat
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/heartbeat
+            git commit -m "Battement de cœur : garde la tâche planifiée active"
+            git push
+          else
+            echo "Dernier commit il y a $days jour(s) : rien à faire."
+          fi

@@ -1,0 +1,18 @@
+{
+  "name": "Cinq Sommets",
+  "short_name": "Cinq Sommets",
+  "description": "Cinq compétences, quelques minutes par jour : vendre, écrire, comprendre les gens, marketer, faire fructifier son argent.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EDF0EB",
+  "theme_color": "#E4571F",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

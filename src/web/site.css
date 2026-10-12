@@ -1,0 +1,25 @@
+/* Réglages de base du document (remplacent l'enveloppe des artefacts) */
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-size:14px}
+img{max-width:100%}
+[hidden]{display:none!important}
+code{font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:5px}
+
+/* Écran de connexion */
+.login{min-height:100%;display:flex;align-items:center;justify-content:center;padding:32px 16px}
+.lg-card{width:100%;max-width:420px;display:flex;flex-direction:column;gap:16px}
+.lg-brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:800;font-size:18px}
+.lg-logo{width:44px;height:44px;border-radius:14px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 color-mix(in srgb,var(--accent) 65%,#000)}
+.lg-logo svg{width:26px;height:26px}
+.lg-card h1{font-family:var(--font-display);font-size:28px;line-height:1.12;margin:8px 0 0;text-wrap:balance;letter-spacing:-.02em}
+.lg-card > p{margin:0;color:var(--muted);font-size:16px}
+.lg-form{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.lg-form label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lg-form input,.pf-add input{font:inherit;font-size:17px;padding:12px 14px;border-radius:12px;border:2px solid var(--line);background:var(--surface);color:var(--ink);width:100%;min-width:0;box-sizing:border-box}
+.lg-form input:focus,.pf-add input:focus{border-color:var(--accent);outline:none}
+#lg-otp{font-size:26px;letter-spacing:.3em;font-weight:800;text-align:center}
+.lg-err{color:var(--bad);font-weight:600;font-size:14px;margin:0}
+.lg-links{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lg-wait{display:flex;align-items:center;gap:12px;color:var(--muted);font-weight:600;font-size:16px}
+.pf-add{display:flex;flex-direction:column;gap:8px}
