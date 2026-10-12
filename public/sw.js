@@ -19,7 +19,7 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // Jamais de cache pour Supabase (connexion, base, coach).
+  // Jamais de cache pour Supabase (connexion et base).
   if (url.hostname.endsWith('.supabase.co') || url.hostname.endsWith('.supabase.in')) return;
 
   if (req.mode === 'navigate') {

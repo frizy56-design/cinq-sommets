@@ -100,14 +100,14 @@
   const AV_COLORS = ['#C2562B', '#2F6FA3', '#6E4A9E', '#3C7F45', '#9A6B0B', '#A33A5A', '#2C8A86', '#5B6470'];
   const QPOOL = [
     { k: 'lessons', n: 2 }, { k: 'perfect', n: 1 }, { k: 'combo', n: 6 }, { k: 'review', n: 1 }, { k: 'defi', n: 1 },
-    { k: 'summits', n: 2 }, { k: 'correct', n: 15 }, { k: 'rp', n: 1, coach: true }, { k: 'sprint', n: 1 }, { k: 'gen', n: 1, coach: true },
-    { k: 'atelier', n: 1, coach: true }, { k: 'mission', n: 1, needsMission: true }, { k: 'listen', n: 1 }
+    { k: 'summits', n: 2 }, { k: 'correct', n: 15 }, { k: 'rp', n: 1 }, { k: 'sprint', n: 1 }, { k: 'gen', n: 1 },
+    { k: 'atelier', n: 1 }, { k: 'mission', n: 1, needsMission: true }, { k: 'listen', n: 1 }
   ];
   const QLABEL = {
     xp: n => 'Grimpe ' + fmt(n) + ' m de D+', lessons: n => 'Termine ' + n + ' leçons', perfect: () => 'Termine une leçon sans erreur',
     combo: n => 'Enchaîne ' + n + ' bonnes réponses', review: () => 'Fais une révision', defi: () => 'Relève un défi écrit',
-    summits: n => 'Travaille ' + n + ' sommets différents', correct: n => 'Réussis ' + n + ' exercices', rp: () => 'Fais un jeu de rôle',
-    sprint: () => 'Fais un sprint de 60 secondes', gen: () => 'Fais un entraînement illimité', atelier: () => 'Passe un vrai texte à l\'atelier',
+    summits: n => 'Travaille ' + n + ' sommets différents', correct: n => 'Réussis ' + n + ' exercices', rp: () => 'Fais un jeu de rôle avec Claude',
+    sprint: () => 'Fais un sprint de 60 secondes', gen: () => 'Fais un entraînement illimité avec Claude', atelier: () => 'Passe un vrai texte à l\'atelier',
     mission: () => 'Valide une mission terrain', listen: () => 'Écoute les fiches d\'un camp'
   };
   const QICON = { xp: 'mountain', lessons: 'star', perfect: 'spark', combo: 'flame', review: 'refresh', defi: 'pen', summits: 'target', correct: 'check', rp: 'chat', sprint: 'timer', gen: 'infinity', atelier: 'wrench', mission: 'flag', listen: 'headphones' };
@@ -127,7 +127,7 @@
     { id: 'rp5', n: 'Rodé', d: '5 jeux de rôle terminés', i: 'chat', t: S => S.stats.rp >= 5 },
     { id: 'mission1', n: 'Sur le terrain', d: 'Valide une mission terrain', i: 'flag', t: S => S.stats.missions >= 1 },
     { id: 'mission10', n: 'Praticien', d: 'Valide 10 missions terrain', i: 'flag', t: S => S.stats.missions >= 10 },
-    { id: 'atelier', n: 'Atelier', d: 'Fais corriger un vrai texte', i: 'wrench', t: S => S.stats.ateliers >= 1 },
+    { id: 'atelier', n: 'Atelier', d: 'Fais relire un vrai texte par Claude', i: 'wrench', t: S => S.stats.ateliers >= 1 },
     { id: 'sprint15', n: 'Sprinteur', d: '15 bonnes réponses en un sprint', i: 'timer', t: S => S.sprintBest >= 15 },
     { id: 'gen', n: 'Inépuisable', d: 'Un entraînement illimité', i: 'infinity', t: S => S.stats.gens >= 1 },
     { id: 'listen', n: 'À l\'écoute', d: 'Écoute un camp en entier', i: 'headphones', t: S => S.stats.listens >= 1 },
@@ -150,7 +150,7 @@
       days: {}, streak: { count: 0, last: null, freezes: 0, best: 0, frozen: [], lost: null, notice: null },
       lessons: {}, items: {}, summitLast: {}, quests: null, league: null, boostUntil: 0,
       badges: {}, chests: {}, books: {}, essays: {}, seenCards: {}, missions: {}, carnet: { atelier: [], rp: [] },
-      sprintBest: 0, listenLog: {}, atelierDay: null, rpBest: {},
+      sprintBest: 0, listenLog: {}, atelierDay: null, rpBest: {}, claudeOpen: null,
       stats: { correct: 0, answered: 0, lessons: 0, perfect: 0, defis: 0, defiScore: 0, bestCombo: 0, reviews: 0, coach: 0, seconds: 0, rp: 0, missions: 0, ateliers: 0, sprints: 0, gens: 0, listens: 0 },
       sound: true, seenIntro: false, seenV2: false, summit: 'vente'
     };
@@ -174,20 +174,42 @@
   let S = migrate(loadLocal());
   let NAME = (PLATFORM && ((PLATFORM.displayName || '').split(' ')[0] || (PLATFORM.email || '').split('@')[0])) || 'Antoine', IS_OWNER = PLATFORM ? PLATFORM.role === 'admin' : true;
 
-  const remote = { ref: null, status: 'local', writing: false, again: false, timer: null, pending: null };
+  const remote = { ref: null, status: 'local', writing: false, again: false, timer: null, pending: null, paused: false, initing: false };
   function persist() { S.updatedAt = Date.now(); saveLocal(); scheduleRemote(); }
-  function scheduleRemote() { if (!remote.ref) return; clearTimeout(remote.timer); remote.timer = setTimeout(flushRemote, 1200); }
+  function scheduleRemote() { if (!remote.ref || remote.paused) return; clearTimeout(remote.timer); remote.timer = setTimeout(flushRemote, 1200); }
+  /* Un autre appareil a écrit entre-temps : on garde la version la plus avancée (D+ cumulé). */
+  function takeRemote(rs) {
+    const copy = JSON.parse(JSON.stringify(rs));
+    if (L) { remote.pending = copy; remote.paused = true; } else applyRemote(copy);
+  }
   async function flushRemote() {
-    if (!remote.ref) return;
+    if (!remote.ref || remote.paused) return;
     if (remote.writing) { remote.again = true; return; }
     remote.writing = true;
-    try { await remote.ref.set({ v: 2, state: JSON.parse(JSON.stringify(S)) }); remote.status = 'cloud'; }
+    try {
+      const r = await remote.ref.set({ v: 2, state: JSON.parse(JSON.stringify(S)) });
+      remote.status = 'cloud';
+      if (r && r.conflict && r.state) takeRemote(r.state);
+    }
     catch (e) { remote.status = (e && e.code === 'invalid_argument') ? 'local' : 'retry'; if (e && e.code === 'invalid_argument') remote.ref = null; }
     remote.writing = false;
     if (remote.again) { remote.again = false; flushRemote(); }
   }
+  /* Au retour sur l'appli : récupère ce qu'un autre appareil a pu enregistrer. */
+  async function pullRemote() {
+    if (!window.claude || typeof window.claude.use !== 'function') return;
+    if (!remote.ref) { if (!remote.initing) initRemote(); return; }
+    try {
+      const snap = await remote.ref.get();
+      if (!snap || snap.changed !== true || !snap.exists) return;
+      const d = snap.data(), rs = d && d.state;
+      if (!rs) return;
+      if ((rs.xp || 0) >= (S.xp || 0)) takeRemote(rs); else scheduleRemote();
+    } catch (e) { /* hors ligne */ }
+  }
   async function initRemote() {
     if (!window.claude || typeof window.claude.use !== 'function') return;
+    remote.initing = true;
     try {
       const [user, db] = await Promise.all([window.claude.use('user'), window.claude.use('db')]);
       if (user) {
@@ -203,29 +225,14 @@
       if (snap.exists) {
         const d = snap.data();
         const rs = d && d.state;
-        if (rs && (rs.updatedAt || 0) > (S.updatedAt || 0)) {
-          const copy = JSON.parse(JSON.stringify(rs));
-          if (L) remote.pending = copy; else applyRemote(copy);
-        } else if ((S.updatedAt || 0) > ((rs && rs.updatedAt) || 0)) scheduleRemote();
+        if (rs && (rs.updatedAt || 0) > (S.updatedAt || 0)) takeRemote(rs);
+        else if ((S.updatedAt || 0) > ((rs && rs.updatedAt) || 0)) scheduleRemote();
       } else if (S.updatedAt) scheduleRemote();
-      initTeam(db, user, uid);
+      if (!TEAM.db) initTeam(db, user, uid);
       if (!L) renderAll();
-    } catch (e) { remote.status = 'local'; }
+    } catch (e) { remote.status = 'local'; } finally { remote.initing = false; }
   }
   function applyRemote(rs) { S = migrate(rs); saveLocal(); tick(true); if (S.seenIntro && sheetLocked && !L) closeSheet(); renderAll(); pushLeague(); }
-
-  let SAMPLE = null, COACH_OFF = false;
-  const samplePromise = (window.claude && typeof window.claude.use === 'function')
-    ? window.claude.use('sample').then(s => { SAMPLE = s; if (!s) COACH_OFF = true; return s; }).catch(() => { COACH_OFF = true; return null; })
-    : Promise.resolve(null).then(() => { COACH_OFF = true; return null; });
-  function coachRefused(code) { return ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(code) >= 0; }
-  function coachErrorText(code) {
-    if (coachRefused(code)) return 'Le coach n\'est pas disponible ici.';
-    if (code === 'rate_limited') return 'Le coach est très sollicité. Réessaie dans un moment.';
-    if (code === 'refused') return 'Le coach a refusé cette demande. Reformule ton texte.';
-    if (code === 'invalid_json') return 'La réponse du coach était illisible. Réessaie.';
-    return 'Le coach n\'a pas pu répondre. Réessaie.';
-  }
 
   /* ---------- Maintenance quotidienne ---------- */
   function regenHearts() {
@@ -269,7 +276,7 @@
     if (S.quests && S.quests.day === d) return;
     const r = rng(hash('q' + d));
     const hasMission = activeMissions().length > 0;
-    const pool = QPOOL.filter(q => (!q.coach || !COACH_OFF) && (!q.needsMission || hasMission) && (q.k !== 'review' || seenItems().length >= 3));
+    const pool = QPOOL.filter(q => (!q.needsMission || hasMission) && (q.k !== 'review' || seenItems().length >= 3));
     const pick = shuffle(pool, r).slice(0, 2);
     S.quests = { day: d, list: [{ k: 'xp', n: Math.max(50, S.goal), p: 0, c: false }].concat(pick.map(q => ({ k: q.k, n: q.n, p: 0, c: false }))), sums: [], chest: false };
   }

@@ -8,7 +8,7 @@ const configText = readFileSync(new URL('../public/config.js', import.meta.url),
 const fromConfig = key => (configText.match(new RegExp(key + "\\s*:\\s*['\"]([^'\"]*)['\"]")) || [])[1] || '';
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || fromConfig('supabaseUrl')).replace(/\/$/, '');
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || fromConfig('supabaseAnonKey');
+const SUPABASE_KEY = process.env.SUPABASE_KEY || fromConfig('supabaseKey');
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || fromConfig('vapidPublicKey');
 const { CRON_SECRET, VAPID_PRIVATE_KEY } = process.env;
 const [owner, repo] = (process.env.GITHUB_REPOSITORY || '/').split('/');
@@ -51,7 +51,7 @@ function buildMessage(row) {
 async function main() {
   let due;
   try {
-    due = await rpc('rappels_du_moment', { p_secret: CRON_SECRET });
+    due = await rpc('cs_rappels_du_moment', { p_secret: CRON_SECRET });
   } catch (e) {
     if (e.status === 401 || e.status === 403 || /unauthorized/.test(e.message)) {
       fail('Le secret CRON_SECRET ne correspond pas à celui enregistré dans la base (voir le README).');
@@ -82,7 +82,7 @@ async function main() {
       else console.warn(`Envoi impossible (${e.statusCode || 'réseau'}) : ${String(e.body || e.message || '').slice(0, 200)}`);
     }
   }
-  if (gone.length) await rpc('supprimer_abonnements', { p_secret: CRON_SECRET, p_endpoints: gone });
+  if (gone.length) await rpc('cs_supprimer_abonnements', { p_secret: CRON_SECRET, p_endpoints: gone });
   console.log(`${sent} rappel(s) envoyé(s), ${gone.length} abonnement(s) expiré(s) retiré(s).`);
 }
 

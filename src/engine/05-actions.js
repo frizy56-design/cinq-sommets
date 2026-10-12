@@ -20,7 +20,7 @@
       if (!isUnlocked(lid)) { sheet('<h3>Balise verrouillée</h3><p>Termine l\'étape précédente de ce sommet pour débloquer « ' + esc(m.l.title) + ' ». Tu peux aussi passer le test de niveau du camp.</p><button class="btn block" data-act="close-sheet">Compris</button>'); return; }
       const r = S.lessons[lid];
       const due = r && !m.l.defi ? lessonDue(lid) : 0;
-      const info = m.l.defi ? 'Défi écrit · un coach corrige ta réponse' : m.l.ex.length + ' exercices · environ 4 minutes';
+      const info = m.l.defi ? 'Défi écrit · corrige-toi avec la grille ou avec Claude' : m.l.ex.length + ' exercices · environ 4 minutes';
       const mission = MISSIONS[lid] && S.missions[lid] ? '<p class="small"><b>Mission :</b> ' + esc(MISSIONS[lid]) + ' <span class="muted">(' + ({ active: 'en cours', done: 'accomplie', expired: 'expirée' }[S.missions[lid].status] || '') + ')</span></p>' : '';
       sheet('<div class="eyebrow" style="color:' + m.s.color + '">' + esc(m.s.name) + ' · Camp ' + (m.ui + 1) + '</div><h3>' + esc(m.l.title) + '</h3><p class="small muted">' + info + (r ? ' · faite ' + plural(r.n, 'fois', 'fois') + (r.skip ? ' (validée par test)' : ', meilleur score ' + r.best + (m.l.defi ? '/100' : ' %')) : '') + '</p>' + mission +
         (due >= 2 ? '<div class="alert info">' + ic('refresh') + '<span>' + plural(due, 'notion s\'efface', 'notions s\'effacent') + '. Les raviver maintenant les ancre pour longtemps.</span></div><button class="btn block" style="--b:var(--good)" data-act="revive" data-lid="' + lid + '">' + ic('refresh') + 'Raviver · ' + due + '</button>' : '') +
@@ -69,7 +69,7 @@
     },
     quit() {
       if (!L) return;
-      if (L.phase === 'end' || L.mode === 'gen-wait' || (L.mode === 'rp' && L.stage === 'brief') || (L.mode === 'atelier' && L.stage === 'input' && !(($('#at-in') || {}).value || '').trim())) { ACT['quit-now'](); return; }
+      if (L.phase === 'end' || L.mode === 'claude') { ACT['quit-now'](); return; }
       sheet('<h3>Quitter ?</h3><p>Ta progression dans cette séance sera perdue. Le D+ ne compte qu\'à l\'arrivée.</p><button class="btn block" data-act="close-sheet">Continuer</button><button class="btn ghost block" style="color:var(--bad)" data-act="quit-now">Quitter</button>');
     },
     'quit-now'() { closeSheet(); if (L && L.cur && L.cur.e && L.cur.e.t === 'ecrit') saveDraft(L.cur); closeOverlay(); },
@@ -89,32 +89,39 @@
     'mission-done'(t) { missionDoneSheet(t.dataset.lid); },
     'mission-validate'(t) { const note = ($('#mission-note') || {}).value || ''; closeSheet(); validateMission(t.dataset.lid, note); },
     'mission-drop'(t) { const m = S.missions[t.dataset.lid]; if (!m) return; delete S.missions[t.dataset.lid]; persist(); renderAll(); toast('Mission retirée'); },
-    coach() { runCoach(); },
-    'coach-stop'() { if (L.cur.ctl) L.cur.ctl.abort(); },
     selfcheck() {
-      const st = L.cur; st.text = ($('#essay') || {}).value || st.text;
+      const st = L.cur; if (st.stage === 'write') st.text = ($('#essay') || {}).value || st.text;
       if (words(st.text) < 5) { toast('Écris au moins quelques phrases.'); return; }
       saveDraft(st); st.stage = 'self'; st.checks = st.e.crit.map(() => false); renderLesson();
     },
     rewrite() { L.cur.stage = 'write'; renderLesson(); },
-    'defi-done'() { finishDefi(L.cur.res.score); },
     'self-done'() { const st = L.cur; const n = st.checks.filter(Boolean).length; finishDefi(Math.round(100 * n / st.e.crit.length)); },
-    'rp-open'(t) { startRP(t.dataset.id); },
-    'rp-start'() { L.stage = 'chat'; renderRP(); },
-    'rp-send'() { rpSend(); },
-    'rp-end'() { if (L.userTurns >= 1) rpDebrief(); },
-    'rp-stop'() { if (L.ctl) L.ctl.abort(); },
-    'rp-again'() { const id = L.sc.id; L = null; startRP(id); },
-    'rp-done'() { rpFinish(); },
-    'atelier-open'() { startAtelier(); },
-    'at-type'(t) { L.text = ($('#at-in') || {}).value || L.text; L.type = t.dataset.v; renderAtelier(); },
-    'at-lens'(t) { L.text = ($('#at-in') || {}).value || L.text; L.lens = t.dataset.v; renderAtelier(); },
-    'at-run'() { atelierRun(); },
-    'at-stop'() { if (L.ctl) L.ctl.abort(); },
-    'at-again'() { L.stage = 'input'; L.text = ''; L.res = null; renderAtelier(); },
-    'at-done'() { atelierDone(); },
-    'gen-open'(t) { if (t.dataset.s) { startGen(t.dataset.s); return; } genSheet(); },
-    'gen-start'(t) { closeSheet(); startGen(t.dataset.s); },
+    'defi-claude'() {
+      const st = L.cur; st.text = ($('#essay') || {}).value || st.text;
+      if (words(st.text) < 5) { toast('Écris au moins quelques phrases avant de demander à Claude.'); return; }
+      saveDraft(st); st.stage = 'claude'; st.copied = false; L.copyFailed = false; renderLesson();
+    },
+    'defi-claude-done'() {
+      const st = L.cur; readClaudeInputs();
+      const n = parseScore(st.score);
+      if (n == null) { toast('Indique la note sur 100 donnée par Claude.'); return; }
+      S.stats.coach++;
+      finishDefi(n, (st.version || '').trim());
+    },
+    'rp-open'(t) { startClaude('rp', { id: t.dataset.id }); },
+    'atelier-open'() { startClaude('atelier'); },
+    'at-type'(t) { readClaudeInputs(); L.type = t.dataset.v; renderClaude(); },
+    'at-lens'(t) { readClaudeInputs(); L.lens = t.dataset.v; L.s = SBYID[L.lens]; renderClaude(); },
+    'gen-open'(t) { if (t.dataset.s) { startClaude('gen', { sid: t.dataset.s }); return; } genSheet(); },
+    'gen-start'(t) { closeSheet(); startClaude('gen', { sid: t.dataset.s }); },
+    'gen-score'(t) { L.genScore = +t.dataset.v; renderClaude(); },
+    'claude-copy'() { claudeCopy(); },
+    'claude-open'() { claudeOpenNow(); },
+    'claude-back'() { readClaudeInputs(); if (L.mode === 'claude') { rememberClaude(); L.stage = 'back'; renderClaude(); } },
+    'claude-brief'() { readClaudeInputs(); L.stage = 'brief'; renderClaude(); },
+    'claude-done'() { claudeDone(); },
+    'claude-drop'() { S.claudeOpen = null; saveLocal(); closeOverlay(); },
+    'claude-resume'() { resumeClaude(); },
     sprint() { startSprint(); },
     'sprint-go'() { sprintGo(); },
     'sprint-ans'(t) { sprintAnswer(t.dataset.v); },
@@ -155,7 +162,7 @@
     'hearts-info'() {
       regenHearts();
       sheet('<div class="row"><span style="color:var(--water);font-size:40px">' + ic('flask') + '</span><div><h3>' + S.hearts + ' gourdes sur 5</h3><div class="small muted">' + (S.hearts >= MAX_HEARTS ? 'Pleines' : 'Prochaine dans ' + msToHM(nextHeartIn())) + '</div></div></div>' +
-        '<p class="small">Chaque erreur dans une leçon vide une gourde. Les révisions, les défis, les jeux de rôle et l\'entraînement illimité n\'en consomment pas, et chaque révision terminée en remplit une.</p>' +
+        '<p class="small">Chaque erreur dans une leçon vide une gourde. Les révisions, les défis et les séances avec Claude n\'en consomment pas, et chaque révision terminée en remplit une.</p>' +
         '<button class="btn block" style="--b:var(--water)" data-act="buy" data-item="refill"' + (S.hearts >= MAX_HEARTS ? ' disabled' : '') + '>Remplir · ' + PRICES.refill + ' gels</button><button class="btn ghost block" data-act="close-sheet">Fermer</button>');
     },
     book(t) {
@@ -229,17 +236,17 @@
       '<div class="list small">' + introRow('flame', 'var(--flame)', 'Une séance par jour garde ta <b>série</b> en vie.') +
       introRow('mountain', 'var(--accent)', 'Chaque bonne réponse te fait grimper en <b>D+</b>, et le D+ te classe dans ta <b>ligue</b>.') +
       introRow('flag', 'var(--c-marketing)', 'Après chaque leçon, une <b>mission terrain</b> à appliquer dans ton travail.') +
-      introRow('chat', 'var(--c-vente)', 'Dans <b>Pratique</b> : jeux de rôle, atelier sur tes vrais textes, questions illimitées.') + '</div>' +
+      introRow('chat', 'var(--c-vente)', 'Dans <b>Pratique</b> : jeux de rôle, atelier sur tes vrais textes et questions illimitées, avec Claude.') + '</div>' +
       '<div><div class="eyebrow" style="margin-bottom:8px">Ton objectif quotidien</div><div class="seg">' + GOALS.map(g => '<button class="' + (S.goal === g.v ? 'on' : '') + '" data-act="intro-goal" data-v="' + g.v + '">' + esc(g.n) + ' · ' + g.v + ' m</button>').join('') + '</div></div>' +
       '<button class="btn block" data-act="intro-go">C\'est parti</button>', true);
   }
   function showWhatsNew() {
     sheet('<div class="eyebrow" style="color:var(--accent)">Nouvelle version</div><h3>Cinq Sommets passe à la pratique</h3>' +
       '<div class="list small">' + introRow('mountain', 'var(--c-marketing)', 'Le sommet <b>Cuisiner</b> devient <b>Marketer</b> : Sharp, Binet & Field, Dunford, Godin, Berger, Eyal.') +
-      introRow('chat', 'var(--c-vente)', '<b>Jeux de rôle</b> : négocie avec une marque, mène un appel découverte, recrute une ambassadrice. Un coach débriefe.') +
+      introRow('chat', 'var(--c-vente)', '<b>Jeux de rôle avec Claude</b> : négocie avec une marque, mène un appel découverte, recrute une ambassadrice. Claude débriefe et te note.') +
       introRow('flag', 'var(--good)', '<b>Missions terrain</b> après chaque leçon, à valider dans tes quêtes.') +
-      introRow('wrench', 'var(--c-ecrire)', '<b>Atelier</b> : colle un vrai texte, il revient corrigé avec les principes du jeu.') +
-      introRow('infinity', 'var(--c-psycho)', '<b>Entraînement illimité</b>, <b>sprint 60 s</b>, <b>écoute</b> des fiches et notions qui s\'effacent à raviver.') +
+      introRow('wrench', 'var(--c-ecrire)', '<b>Atelier</b> : un vrai texte relu par Claude avec les principes du jeu.') +
+      introRow('infinity', 'var(--c-psycho)', '<b>Entraînement illimité</b> avec Claude, <b>sprint 60 s</b>, <b>écoute</b> des fiches et notions qui s\'effacent à raviver.') +
       introRow('users', 'var(--accent)', '<b>Ligue d\'équipe</b> : partage le jeu à ton équipe pour un vrai classement.') + '</div>' +
       '<button class="btn block" data-act="v2-ok" data-go="practice">Découvrir la pratique</button><button class="btn ghost block" data-act="v2-ok">Plus tard</button>', true);
   }
@@ -255,7 +262,7 @@
   document.addEventListener('input', ev => {
     const t = ev.target;
     if (t.dataset.in === 'atelier') { if (L) L.text = t.value; updateWCFor(t); return; }
-    if (t.dataset.in === 'rp') { if (L) L.draft = t.value; return; }
+    if (t.dataset.in && t.dataset.in.indexOf('claude-') === 0) { readClaudeInputs(); return; }
     if (!L || !L.cur) return;
     if (t.dataset.in === 'calc') { L.cur.val = t.value; refreshCheckBtn(); }
     else if (t.dataset.in === 'essay') { L.cur.text = t.value; updateWC(); clearTimeout(L.cur.dt); L.cur.dt = setTimeout(() => { if (L && L.cur && L.cur.e.t === 'ecrit') saveDraft(L.cur); }, 1500); }
@@ -266,13 +273,12 @@
   });
   document.addEventListener('keydown', ev => {
     if (ev.key === 'Escape' && !$('#sheet').hidden && !sheetLocked) { closeSheet(); return; }
-    if (ev.key === 'Enter' && L && L.mode === 'rp' && L.stage === 'chat' && ev.target.id === 'rp-in' && !ev.shiftKey) { ev.preventDefault(); rpSend(); return; }
     if (ev.key === 'Enter' && L && L.phase === 'ex' && L.cur && L.cur.e && L.cur.e.t === 'calc') {
       ev.preventDefault();
       if (!L.cur.answered && ready()) grade(); else if (L.cur.answered) ACT.continue();
     }
   });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { const ch = tick(); if (!L) renderAll(); else renderStats(); if (ch) collectNotices(); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { const ch = tick(true); saveLocal(); if (!L) renderAll(); else renderStats(); if (ch) collectNotices(); pullRemote(); } });
   setInterval(() => { const ch = tick(true); if (ch) { saveLocal(); collectNotices(); if (!L) { renderAll(); afterNotices(); } } else { regenHearts(); renderStats(); } }, 60000);
 
   /* ---------- Démarrage ---------- */

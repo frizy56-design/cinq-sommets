@@ -64,14 +64,13 @@ def build() -> None:
 <div id="login" class="login" aria-live="polite"></div>
 <div id="app" hidden>{body}
 <script src="config.js?v={version}"></script>
-<script src="vendor/supabase.min.js?v={version}"></script>
 <script src="app.js?v={version}"></script>
 </body>
 </html>
 """
     (DIST / "index.html").write_text(html, encoding="utf-8")
 
-    precache = ["./", "./index.html", f"./app.js?v={version}", f"./config.js?v={version}", f"./vendor/supabase.min.js?v={version}",
+    precache = ["./", "./index.html", f"./app.js?v={version}", f"./config.js?v={version}",
                 "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/badge-72.png"]
     sw = read(DIST / "sw.js").replace("__VERSION__", version).replace("__PRECACHE__", json.dumps(precache))
     (DIST / "sw.js").write_text(sw, encoding="utf-8")
